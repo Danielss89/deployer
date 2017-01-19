@@ -6,8 +6,6 @@ use GuzzleHttp\Client;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\SerializesModels;
 use REBELinBLUE\Deployer\CheckUrl;
-use REBELinBLUE\Deployer\Events\UrlDown;
-use REBELinBLUE\Deployer\Events\UrlUp;
 
 /**
  * Request the urls.
@@ -37,8 +35,6 @@ class RequestProjectCheckUrl extends Job implements ShouldQueue
     public function handle()
     {
         foreach ($this->links as $link) {
-            $isCurrentlyHealthy = ($link->status === CheckUrl::UNTESTED || $link->isHealthy());
-
             try {
                 (new Client(['timeout'  => 30]))->get($link->url, [
                     'headers' => [
@@ -46,29 +42,9 @@ class RequestProjectCheckUrl extends Job implements ShouldQueue
                     ],
                 ]);
 
-                // FIXME: Move this to methods on the model?
-
-                $status = CheckUrl::ONLINE;
-                $missed = 0;
-
-                if (!$isCurrentlyHealthy) {
-                    $event = UrlUp::class;
-                }
-
-                $link->last_seen = $link->freshTimestamp();
+                $link->online();
             } catch (\Exception $error) {
-                $status = CheckUrl::OFFLINE;
-                $missed = $link->missed + 1;
-
-                $event = UrlDown::class;
-            }
-
-            $link->status = $status;
-            $link->missed = $missed;
-            $link->save();
-
-            if (isset($event)) {
-                event(new $event($link));
+                $link->offline();
             }
         }
     }

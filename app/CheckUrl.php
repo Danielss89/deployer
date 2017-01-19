@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Support\Facades\Lang;
+use REBELinBLUE\Deployer\Events\UrlDown;
+use REBELinBLUE\Deployer\Events\UrlUp;
 use REBELinBLUE\Deployer\Jobs\RequestProjectCheckUrl;
 use REBELinBLUE\Deployer\Traits\BroadcastChanges;
 
@@ -78,11 +80,50 @@ class CheckUrl extends Model
     public function setUrlAttribute($value)
     {
         if (!array_key_exists('url', $this->attributes) || $value !== $this->attributes['url']) {
-            $this->attributes['status'] = self::UNTESTED;
+            $this->attributes['status']    = self::UNTESTED;
             $this->attributes['last_seen'] = null;
         }
 
         $this->attributes['url'] = $value;
+    }
+
+    /**
+     * Flags the link as healthy.
+     *
+     * @return bool
+     *
+     * @fires UrlUp
+     */
+    public function online()
+    {
+        $isCurrentlyHealthy = ($this->status === self::UNTESTED || $this->isHealthy());
+
+        $this->status    = self::ONLINE;
+        $this->missed    = 0;
+        $this->last_seen = $this->freshTimestamp();
+
+        if (!$isCurrentlyHealthy) {
+            event(new UrlUp($this));
+        }
+
+        return $this->save();
+    }
+
+    /**
+     * Flags the link as down.
+     *
+     * @return bool
+     *
+     * @fires UrlDown
+     */
+    public function offline()
+    {
+        $this->status    = self::OFFLINE;
+        $this->missed    = $this->missed + 1;
+
+        event(new UrlDown($this));
+
+        return $this->save();
     }
 
     /**
