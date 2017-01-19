@@ -2,7 +2,7 @@
 
 namespace REBELinBLUE\Deployer\Github;
 
-use GuzzleHttp\Client;
+use GuzzleHttp\Client as HttpClient;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use REBELinBLUE\Deployer\Contracts\Github\LatestReleaseInterface;
 
@@ -53,7 +53,7 @@ class LatestRelease implements LatestReleaseInterface
             }
 
             try {
-                $response = (new Client(['timeout'  => 5]))->get($this->github_url, [
+                $response = (new HttpClient(['timeout'  => 5]))->get($this->github_url, [
                     'headers' => $headers,
                 ]);
             } catch (\Exception $exception) {

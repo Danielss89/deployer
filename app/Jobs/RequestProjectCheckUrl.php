@@ -2,7 +2,7 @@
 
 namespace REBELinBLUE\Deployer\Jobs;
 
-use GuzzleHttp\Client;
+use GuzzleHttp\Client as HttpClient;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\SerializesModels;
 use REBELinBLUE\Deployer\CheckUrl;
@@ -36,7 +36,7 @@ class RequestProjectCheckUrl extends Job implements ShouldQueue
     {
         foreach ($this->links as $link) {
             try {
-                (new Client(['timeout'  => 30]))->get($link->url, [
+                (new HttpClient(['timeout'  => 30]))->get($link->url, [
                     'headers' => [
                         'User-Agent' => USER_AGENT,
                     ],
