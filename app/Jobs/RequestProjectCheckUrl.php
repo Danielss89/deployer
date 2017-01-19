@@ -2,20 +2,19 @@
 
 namespace REBELinBLUE\Deployer\Jobs;
 
-use Httpful\Exception\ConnectionErrorException;
-use Httpful\Request;
+use GuzzleHttp\Client;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\DispatchesJobs;
-use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use REBELinBLUE\Deployer\CheckUrl;
+use REBELinBLUE\Deployer\Events\UrlDown;
+use REBELinBLUE\Deployer\Events\UrlUp;
 
 /**
  * Request the urls.
  */
 class RequestProjectCheckUrl extends Job implements ShouldQueue
 {
-    use InteractsWithQueue, SerializesModels, DispatchesJobs;
+    use SerializesModels;
 
     /**
      * @var \Illuminate\Database\Eloquent\Collection
@@ -34,30 +33,42 @@ class RequestProjectCheckUrl extends Job implements ShouldQueue
 
     /**
      * Execute the command.
-     * @dispatches SlackNotify
      */
     public function handle()
     {
         foreach ($this->links as $link) {
-            try {
-                $response = Request::get($link->url)->send();
+            $isCurrentlyHealthy = ($link->status === CheckUrl::UNTESTED || $link->isHealthy());
 
-                $has_error = $response->hasErrors();
-            } catch (ConnectionErrorException $error) {
-                $has_error = true;
+            try {
+                (new Client(['timeout'  => 30]))->get($link->url, [
+                    'headers' => [
+                        'User-Agent' => USER_AGENT,
+                    ],
+                ]);
+
+                // FIXME: Move this to methods on the model?
+
+                $status = CheckUrl::ONLINE;
+                $missed = 0;
+
+                if (!$isCurrentlyHealthy) {
+                    $event = UrlUp::class;
+                }
+
+                $link->last_seen = $link->freshTimestamp();
+            } catch (\Exception $error) {
+                $status = CheckUrl::OFFLINE;
+                $missed = $link->missed + 1;
+
+                $event = UrlDown::class;
             }
 
-            $link->last_status = $has_error;
+            $link->status = $status;
+            $link->missed = $missed;
             $link->save();
 
-            if ($has_error) {
-                foreach ($link->project->notifications as $notification) {
-                    try {
-                        $this->dispatch(new SlackNotify($notification, $link->notificationPayload()));
-                    } catch (\Exception $error) {
-                        // Don't worry about this error
-                    }
-                }
+            if (isset($event)) {
+                event(new $event($link));
             }
         }
     }

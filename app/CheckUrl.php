@@ -16,12 +16,16 @@ class CheckUrl extends Model
 {
     use SoftDeletes, BroadcastChanges, DispatchesJobs;
 
+    const ONLINE   = 0;
+    const UNTESTED = 1;
+    const OFFLINE  = 2;
+
     /**
      * The attributes that are mass assignable.
      *
      * @var array
      */
-    protected $fillable = ['title', 'url', 'project_id', 'period', 'is_report'];
+    protected $fillable = ['name', 'url', 'project_id', 'period'];
 
     /**
      * The attributes excluded from the model's JSON form.
@@ -31,6 +35,13 @@ class CheckUrl extends Model
     protected $hidden = ['created_at', 'updated_at', 'deleted_at', 'pivot'];
 
     /**
+     * The fields which should be treated as Carbon instances.
+     *
+     * @var array
+     */
+    protected $dates = ['last_seen'];
+
+    /**
      * The attributes that should be casted to native types.
      *
      * @var array
@@ -38,8 +49,9 @@ class CheckUrl extends Model
     protected $casts = [
         'id'         => 'integer',
         'project_id' => 'integer',
-        'is_report'  => 'boolean',
+        'missed'     => 'integer',
         'period'     => 'integer',
+        'status'     => 'integer',
     ];
 
     /**
@@ -52,7 +64,7 @@ class CheckUrl extends Model
 
         // When saving the model, if the URL has changed we need to test it
         static::saved(function (CheckUrl $model) {
-            if (is_null($model->last_status)) {
+            if ($model->status === self::UNTESTED) {
                 $model->dispatch(new RequestProjectCheckUrl([$model]));
             }
         });
@@ -66,7 +78,8 @@ class CheckUrl extends Model
     public function setUrlAttribute($value)
     {
         if (!array_key_exists('url', $this->attributes) || $value !== $this->attributes['url']) {
-            $this->attributes['last_status'] = null;
+            $this->attributes['status'] = self::UNTESTED;
+            $this->attributes['last_seen'] = null;
         }
 
         $this->attributes['url'] = $value;
@@ -83,37 +96,12 @@ class CheckUrl extends Model
     }
 
     /**
-     * Generates a slack payload for the link failure.
+     * Determines whether the URL is currently online.
      *
-     * @return array
+     * @return bool
      */
-    public function notificationPayload()
+    public function isHealthy()
     {
-        $message = Lang::get('checkUrls.message', ['link' => $this->title]);
-
-        $payload = [
-            'attachments' => [
-                [
-                    'fallback' => $message,
-                    'text'     => $message,
-                    'color'    => 'danger',
-                    'fields'   => [
-                        [
-                            'title' => Lang::get('notifications.project'),
-                            'value' => sprintf(
-                                '<%s|%s>',
-                                route('projects', ['id' => $this->project_id]),
-                                $this->project->name
-                            ),
-                            'short' => true,
-                        ],
-                    ],
-                    'footer' => Lang::get('app.name'),
-                    'ts'     => time(),
-                ],
-            ],
-        ];
-
-        return $payload;
+        return ($this->status === self::ONLINE);
     }
 }
